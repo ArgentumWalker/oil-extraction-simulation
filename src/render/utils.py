@@ -9,26 +9,27 @@ def build_ground_mesh(field_map: FieldMap, opacity=0.4):
     z_upper = np.zeros(num_cells)
     z_lower = np.array([-cell.reservoir_depth for row in field_map.map for cell in row])
     intensity = np.array([cell.permeability for row in field_map.map for cell in row])
-    return _build_mesh_coords(z_upper, z_lower, intensity, field_map, opacity, (0, 2.5),
-                              ((0.7, 0.4, 0.2), (0.4, 0.4, 0.4)), "Проницаемость")
+    return _build_mesh_coords(z_upper, z_lower, intensity, field_map, opacity, (0.5, 2.5),
+                              ((0.7, 0.4, 0.2, 0.5), (0.4, 0.4, 0.4, 1.)), "Проницаемость", True)
 
 
-def build_reservoir_mesh(field_map: FieldMap, opacity=0.25):
+def build_reservoir_mesh(field_map: FieldMap, opacity=0.25, render_top=True):
     z_upper = np.array([-cell.reservoir_depth for row in field_map.map for cell in row])
     z_lower = np.array([-cell.reservoir_depth-cell.reservoir_height for row in field_map.map for cell in row])
     return _build_mesh_coords(z_upper, z_lower, None, field_map, opacity, None,
-                              ((0.8, 0.5, 0.3), ), None)
+                              ((0.8, 0.5, 0.3), ), None, False, not  render_top)
 
 
 def build_oil_mesh(field_map: FieldMap, opacity=0.75):
     z_upper = np.array([-cell.reservoir_depth-cell.reservoir_height * (1 - cell.oil_amount / max(1e-9, cell.max_oil_amount)) for row in field_map.map for cell in row])
     z_lower = np.array([-cell.reservoir_depth-cell.reservoir_height for row in field_map.map for cell in row])
-    return _build_mesh_coords(z_upper, z_lower, None, field_map, opacity, None,
-                              ((0., 0., 0.), ), None)
+    intensity = np.array([(min(0.8, cell.oil_amount / max(1e-9, cell.max_oil_amount)) / 0.8 if cell.max_oil_amount > 1e-3 else 0.)
+                          for row in field_map.map for cell in row])
+    return _build_mesh_coords(z_upper, z_lower, intensity, field_map, opacity, (0, 1),
+                              ((0., 0., 0., 0.), (0., 0., 0., 1.)), None)
 
 
 def build_porosity_volume(field_map: FieldMap, opacity=0.1, surface_count=21):
-    num_cells = field_map.width * field_map.height
     x = np.array([cell.x for row in field_map.map for cell in row])
     y = np.array([cell.y for row in field_map.map for cell in row])
     z_upper = np.array([-cell.reservoir_depth for row in field_map.map for cell in row])
@@ -51,38 +52,22 @@ def build_porosity_volume(field_map: FieldMap, opacity=0.1, surface_count=21):
 def build_well_mesh(well_map: WellMap, field_map:FieldMap, opacity=0.25):
     x = [well.x for well in well_map.wells]
     y = [well.y for well in well_map.wells]
-    z = [0.1 for _ in well_map.wells]
-    u = [0 for _ in well_map.wells]
-    v = [0 for _ in well_map.wells]
-    w = [1 for _ in well_map.wells]
-    cones = go.Cone(
-        x=x, y=y, z=z, u=u, v=v, w=w,
-        colorscale=[
-                [0., clrs.label_rgb((0.3, 0.3, 0.9))],
-                [1., clrs.label_rgb((0.3, 0.3, 0.9))]
-            ],
-        opacity=opacity, sizemode="absolute", sizeref=0.5, showscale=False
-    )
     lines = []
     for _x, _y in zip(x, y):
         line = go.Scatter3d(
-            x=[_x, _x], y=[_y, _y], z=[0, -field_map.map[_y][_x].reservoir_depth],
-            marker=dict(
-                size=1,
-                opacity=0.,
-                color='black',
-            ),
+            x=[_x, _x], y=[_y, _y], z=[0.5, -field_map.map[_y][_x].reservoir_depth],
+            mode="lines",
             line=dict(
                 color=clrs.label_rgb((0.3, 0.3, 0.9)),
                 width=5
             ), showlegend=False
         )
         lines.append(line)
-    return [cones] + lines
+    return lines
 
 
 def _build_mesh_coords(z_upper, z_lower, intensity, field_map:FieldMap, opacity, intensity_lims,
-                       colors, label=None, no_bounds=False):
+                       colors, label=None, no_bounds=False, no_top=False):
     num_cells = field_map.width * field_map.height
     x = np.array([cell.x for row in field_map.map for cell in row])
     y = np.array([cell.y for row in field_map.map for cell in row])
@@ -94,18 +79,19 @@ def _build_mesh_coords(z_upper, z_lower, intensity, field_map:FieldMap, opacity,
 
     ### Build a list of triangles
 
-    # Triangles for upper part
-    triangles = [(y * field_map.width + x,
-                  (y + 1) * field_map.width + x,
-                  y * field_map.width + x+1)
+    # Triangles for lower part
+    triangles = [(y * field_map.width + x + num_cells,
+                  (y + 1) * field_map.width + x + num_cells,
+                  y * field_map.width + x+1 + num_cells)
                  for y in range(field_map.height-1) for x in range(field_map.width-1)]
-    triangles += [(y * field_map.width + x,
-                   (y - 1) * field_map.width + x,
-                   y * field_map.width + x-1)
+    triangles += [(y * field_map.width + x + num_cells,
+                   (y - 1) * field_map.width + x + num_cells,
+                   y * field_map.width + x-1 + num_cells)
                   for y in range(1, field_map.height) for x in range(1, field_map.width)]
 
-    # Triangles for lower part
-    triangles += [(i + num_cells, j + num_cells, k + num_cells) for i, j, k in triangles]
+    # Triangles for upper part
+    if not no_top:
+        triangles += [(i - num_cells, j - num_cells, k - num_cells) for i, j, k in triangles]
 
     # Triangles for connection between lower and upper parts
     if not no_bounds:
@@ -128,10 +114,11 @@ def _build_mesh_coords(z_upper, z_lower, intensity, field_map:FieldMap, opacity,
             j=[j for (_, j, _) in triangles],
             k=[k for (_, _, k) in triangles],
             colorscale=[
-                [0., clrs.label_rgb(colors[0])],
-                [1., clrs.label_rgb(colors[1])]
+                [0., (clrs.label_rgb(colors[0]) if len(colors[0]) != 4 else _label_rgba(*colors[0]))],
+                [1., (clrs.label_rgb(colors[1]) if len(colors[1]) != 4 else _label_rgba(*colors[1]))]
             ],
             colorbar_title=label,
+            showscale=(label is not None),
             opacity=opacity,
             cmin=intensity_lims[0],
             cmax=intensity_lims[1]
@@ -146,3 +133,7 @@ def _build_mesh_coords(z_upper, z_lower, intensity, field_map:FieldMap, opacity,
             opacity=opacity,
         )
     return mesh
+
+
+def _label_rgba(r, g, b, a):
+    return f"rgba({int(255*r)}, {int(255*g)}, {int(255*b)}, {a:.3f})"

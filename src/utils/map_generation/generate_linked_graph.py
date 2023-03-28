@@ -4,7 +4,11 @@ import numpy as np
 def generate_graph(w, h, min_nodes=6, max_nodes=32, min_connections_per_node=1, max_connection_per_node=16,
                    min_depth=0.5, max_depth=2, min_permeability=0.2, max_permeability=1.2,
                    min_height=0.2, max_height=2):
-    nodes = [(np.random.randint(0, w), np.random.randint(0, h)) for _ in range(np.random.randint(min_nodes, max_nodes+1))]
+    margin_x = w // 10
+    margin_y = h // 10
+    nodes = [(np.random.randint(margin_x, w-margin_x),
+              np.random.randint(margin_y, h-margin_y))
+             for _ in range(np.random.randint(min_nodes, max_nodes+1))]
 
     connection_counts = np.zeros(len(nodes), dtype=int)
     connected_to = [set() for _ in nodes]
@@ -67,7 +71,7 @@ def generate_graph(w, h, min_nodes=6, max_nodes=32, min_connections_per_node=1, 
 
     widths = np.clip((1.5 * (w + h) / len(centers)) * ((1.3 + is_node * 0.8) + (1.2 + 1.2 * is_node) * np.random.rand(1, 1, len(centers))), 0.5, None)
     depths = min_depth + np.random.random(len(centers)) * (max_depth - min_depth)
-    permeabilities = min_permeability + np.random.random(len(centers))**0.75 * (max_permeability - min_permeability)
+    permeabilities = min_permeability + np.random.random(len(centers)) * (max_permeability - min_permeability)
     porosities = 0.1 + 0.9 * np.random.random(len(centers))**0.5
     heights = min_height + (max_height - min_height) * np.random.random(len(centers))**1.25
 
@@ -84,16 +88,19 @@ def generate_graph(w, h, min_nodes=6, max_nodes=32, min_connections_per_node=1, 
     pts_dst = ((pts - pts_dst)**2).sum(-1)**0.5
 
     decay_coef = (np.clip(dst / widths, 0., None).min(axis=-1) * np.clip(pts_dst, 0., None).min(axis=-1))
-    decay = 1.5 ** -np.clip(decay_coef - 0.2, 0., None)
+    decay = 1.7 ** -np.clip(decay_coef - 0.2, 0., None)
 
-    coefs = 1.5 ** -(dst / widths)**0.5
+    coefs = 1.9 ** -(dst / widths)
     coefs = coefs / np.sum(coefs, axis=-1, keepdims=True)
 
     depth_coefs = 2.2 ** -(dst / widths)
     depth_coefs = depth_coefs / np.sum(depth_coefs, axis=-1, keepdims=True)
 
+    permeability_coefs = 2.1 ** -(dst / widths)
+    permeability_coefs = permeability_coefs / np.sum(permeability_coefs, axis=-1, keepdims=True)
+
     depth_map = (depths * depth_coefs).sum(axis=-1)
-    permeability_map = (permeabilities * coefs).sum(axis=-1)
+    permeability_map = (permeabilities * permeability_coefs).sum(axis=-1)
     porosity_map = (porosities * coefs).sum(axis=-1) * decay
     height_map = (heights * coefs).sum(axis=-1) * decay
 

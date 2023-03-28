@@ -166,9 +166,15 @@ class FlowMap:
                     total_flow_map[cell.y, cell.x, i] = max(0, first - second)
                     total_flow_map[other.y, other.x, j] = max(0, second - first)
 
-        # update cell oil values
-        wells = [(well.y, well.x) for well in self.well_map.wells]
+        # Extract oil before performing a step
         extracted_oil = 0
+        for well in self.well_map.wells:
+            cell = self.field_map.map[well.y][well.x]
+            extracted = min(cell.oil_amount, self.oil_viscosity * self.well_power)
+            cell.oil_amount -= extracted
+            extracted_oil += extracted
+
+        # Update cell oil values
         sorted_cells = sorted(cells, key=lambda cell: np.sum(total_flow_map[cell.y, cell.x]))
         for cell in sorted_cells:
             max_total_inflow_amount = cell.max_oil_amount - cell.oil_amount
@@ -188,10 +194,6 @@ class FlowMap:
                 if other is None:
                     continue
                 other.oil_amount -= inflow_amounts[i]
-
-            if (cell.y, cell.x) in wells:
-                extracted_oil += cell.oil_amount
-                cell.oil_amount = 0
 
         return extracted_oil
 
@@ -213,7 +215,6 @@ class FlowMap:
         pending[y, x] = True
         delta_map[y, x] = well_flow_map[y, x]
         while len(queue) > 0:
-            tmp = np.sum(well_flow_map, axis=-1)
             x, y = queue.popleft()
             pending[y, x] = False
 
